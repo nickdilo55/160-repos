@@ -1,6 +1,6 @@
 // Nick Di Lorenzo
 // ndiloren@ucsc.edu
-// 
+// https://nickdilo55.github.io/160-repos/assignments/asg1/src/HelloPoint1.html
 var VSHADER_SOURCE =
   "attribute vec4 a_Position;\n" +
   "uniform float u_PointSize;\n" +
