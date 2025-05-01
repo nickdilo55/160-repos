@@ -1,442 +1,349 @@
-// ColoredPoint.js (c) 2012 matsuda
-// Vertex shader program
+// BlockyAnimal.js
+
+// Vertex shader
 var VSHADER_SOURCE = `
   attribute vec4 a_Position;
   uniform float u_Size;
+  uniform mat4 u_ModelMatrix;
+  uniform mat4 u_GlobalRotateMatrix;
   void main() {
-    gl_Position = a_Position;
-    //gl_PointSize = 10.0;
+    gl_Position = u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
     gl_PointSize = u_Size;
-  }`
+  }`;
 
-// Fragment shader program
-var FSHADER_SOURCE =`
+// Fragment shader
+var FSHADER_SOURCE = `
   precision mediump float;
   uniform vec4 u_FragColor;
   void main() {
     gl_FragColor = u_FragColor;
-  }`
+  }`;
 
-// Global Variables
-let canvas;
-let gl;
-let a_Position;
-let u_FragColor;
-let u_Size
+// GL & GLSL handles
+let canvas, gl;
+let a_Position, u_FragColor, u_Size, u_ModelMatrix, u_GlobalRotateMatrix;
+
+let g_paused = false;   // when true, we don’t advance any of the animations
+
+// Animation angles
+let g_frontLegAngle   = 0,
+    g_backLegAngle    = 0;
+
+    // after your other let-statements:
+let g_headAngle  = 20;   // default “nose-down” tilt
+
+
+// Leg‐fall state
+let g_legsFalling   = false,
+    g_legFallOffset = 0;
+const LEG_FALL_SPEED = 2.0;  // world units/sec
+
+// Time tracking
+let g_startTime = performance.now() / 1000,
+    g_prevTime  = g_startTime,
+    g_seconds   = 0;
+
+// Camera‐drag state
+let g_mouseXAngle = 0,
+    g_mouseYAngle = 0,
+    g_lastMouseX  = 0,
+    g_lastMouseY  = 0,
+    g_startXAngle = 0,
+    g_startYAngle = 0,
+    g_mouseDragging = false;
+
+// List of 2D shapes drawn by clicks
+let g_shapesList = [];
+
+// Pivot for orbiting camera
+const PIVOT = { x:0, y:-0.5, z:0 };
 
 function setupWebGL() {
-  // Retrieve <canvas> element
   canvas = document.getElementById('webgl');
-
-  // Get the rendering context for WebGL
-  // gl = getWebGLContext(canvas);
-  gl = canvas.getContext("webgl", { preserveDrawingBuffer: true });
+  gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
   if (!gl) {
-    console.log('Failed to get the rendering context for WebGL');
+    console.error('WebGL not supported');
     return;
   }
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearDepth(1.0);
+  gl.clearColor(0.6, 0.8, 1.0, 1.0);
 }
 
 function connectVariablesToGLSL() {
-  // Initialize shaders
   if (!initShaders(gl, VSHADER_SOURCE, FSHADER_SOURCE)) {
-    console.log('Failed to intialize shaders.');
+    console.error('Failed to initialize shaders.');
     return;
   }
-
-  // // Get the storage location of a_Position
-  a_Position = gl.getAttribLocation(gl.program, 'a_Position');
-  if (a_Position < 0) {
-    console.log('Failed to get the storage location of a_Position');
-    return;
-  }
-
-  // Get the storage location of u_FragColor
-  u_FragColor = gl.getUniformLocation(gl.program, 'u_FragColor');
-  if (!u_FragColor) {
-    console.log('Failed to get the storage location of u_FragColor');
-    return;
-  }
-
-  // Get the storage location of u_Size
-  u_Size = gl.getUniformLocation(gl.program, 'u_Size');
-  if (!u_Size) {
-    console.log('Failed to get the storage location of u_Size');
-    return;
-  }
+  a_Position           = gl.getAttribLocation(gl.program, 'a_Position');
+  u_FragColor          = gl.getUniformLocation(gl.program, 'u_FragColor');
+  u_Size               = gl.getUniformLocation(gl.program, 'u_Size');
+  u_ModelMatrix        = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
+  u_GlobalRotateMatrix = gl.getUniformLocation(gl.program, 'u_GlobalRotateMatrix');
 }
-
-// Constants
-const POINT = 0;
-const TRIANGLE = 1;
-const CIRCLE = 2;
-
-// Globals related UI elements
-let g_selectedColor = [1.0, 1.0, 1.0, 1.0];
-let g_selectedSize = 5.0;
-let g_seletcedType = POINT;
-let g_seletcedSegment = 10;
-let g_selectedAlpha = 1.0;
-let g_spectrumDraw = false;
-let g_lastMousePos = null;
-let g_lastMouseTime = null;
-let g_kaleidoscopeMode = false;
-let g_kaleidoscopeSegments = 6;
 
 function addActionsForHtmlUI() {
-  // Button events (shape type)
-  document.getElementById('green').onclick = function() { g_selectedColor = [0.0, 1.0, 0.0, 1.0]; };
-  document.getElementById('red').onclick = function() { g_selectedColor = [1.0, 0.0, 0.0, 1.0]; };
-  document.getElementById('clearButton').onclick = function() { g_shapesList = []; renderAllShapes(); };
-  
-  document.getElementById('pointButton').onclick = function() { g_seletcedType = POINT };
-  document.getElementById('triangleButton').onclick = function() { g_seletcedType = TRIANGLE };
-  document.getElementById('circleButton').onclick = function() { g_seletcedType = CIRCLE };
-
-  // Color slider events
-  document.getElementById('redSlide').addEventListener('mouseup', function() { g_selectedColor[0] = this.value / 100; });
-  document.getElementById('greenSlide').addEventListener('mouseup', function() { g_selectedColor[1] = this.value / 100; });
-  document.getElementById('blueSlide').addEventListener('mouseup', function() { g_selectedColor[2] = this.value / 100; });
-  
-  // Slider events
-  document.getElementById('sizeSlide').addEventListener('mouseup', function() { g_selectedSize = this.value; });
-  document.getElementById('segmentSlide').addEventListener('mouseup', function() { g_seletcedSegment = this.value; });
-  document.getElementById('alphaSlide').addEventListener('mouseup', function() { 
-    g_selectedAlpha = this.value / 100;
-    g_selectedColor[3] = g_selectedAlpha;
-  });
-
-  // Toggle reference image display
-  document.getElementById('showRefButton').onclick = function() {
-    const refImage = document.getElementById('refImage');
-    if (refImage.style.display === 'block') {
-      refImage.style.display = 'none';
-    } else {
-      refImage.style.display = 'block';
-    }
-  }
-
-  // Recreate the reference image
-  document.getElementById('recreateButton').onclick = function() { drawReferenceTriangles(); }
-
-  // Spectrum drawing
-  document.getElementById('spectrumCheckbox').addEventListener('change', function() { g_spectrumDraw = this.checked; });
-
-  document.getElementById('kaleidoscopeCheckbox').addEventListener('change', function() { g_kaleidoscopeMode = this.checked; });
-  
-  document.getElementById('replayButton').onclick = function() { replayDrawing(); };
-
-  document.getElementById('saveButton').onclick = function() { saveCanvasImage(); };
+  document.getElementById('pauseAnim').onclick  = () => { g_paused = false; };
+  document.getElementById('resumeAnim').onclick = () => { g_paused = true; };
+  document.getElementById('headSlider').oninput  = e => {
+    g_headAngle  = +e.target.value;
+    renderAllShapes();
+  };
 }
-
-/// ChatGPT helped me with the saving functionality
-function saveCanvasImage() {
-  const format = "image/png";
-
-  const link = document.createElement("a");
-  link.download = `drawing_${Date.now()}.png`;
-  link.href = canvas.toDataURL(format);
-  link.click();
-}
-
-/// ChatGPT helped me with this replay drawing function
-function replayDrawing() {
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  let sortedShapes = [...g_shapesList].sort((a, b) => a.timestamp - b.timestamp);
-
-  let baseTime = sortedShapes[0]?.timestamp || performance.now();
-
-  for (let i = 0; i < sortedShapes.length; i++) {
-    let shape = sortedShapes[i];
-    let elapsedTime = shape.timestamp - baseTime;
-    setTimeout(() => {
-      shape.render();
-    }, elapsedTime);
-  }
-}
-
-//#region Picture Drawing
-function drawReferenceTriangles() {
-  // Body
-  gl.uniform4f(u_FragColor, 0.0, 0.0, 1.0, 0.5);
-  drawTriangle([
-    -0.1, 0.0,
-    0.5, 0.0,
-    0.2, 0.5
-  ]);
-  // Neck
-  drawTriangle([
-    0.35, 0.214286,
-    0.35, 0.357143,
-    0.5, 0.214286
-  ]);
-  // Head
-  drawTriangle([
-    0.4, 0.285714,
-    0.7, 0.285714,
-    0.4, 0.55
-  ]);
-  // Left bicep
-  drawTriangle([
-    0.1, 0.5,
-    0.3, 0.5,
-    0.2, 0.714286
-  ]);
-  // Left forearm
-  drawTriangle([
-    0.27, 0.63,
-    0.14, 0.785714,
-    0.4, 0.857143
-  ]);
-  gl.uniform4f(u_FragColor, 1.0, 1.0, 0.0, 1.0);
-  // Left hand
-  drawTriangle([
-    0.4, 0.857143,
-    0.35, 0.9642857,
-    0.55, 0.8928571
-  ]);
-  // Right hand
-  drawTriangle([
-    0.4, -0.4642857,
-    0.55, -0.535714,
-    0.3, -0.642857
-  ]);
-  // Right foot
-  drawTriangle([
-    -0.6, -0.785714,
-    -0.8, -0.857142857,
-    -0.5, -0.857142857
-  ]);
-  // Left foot
-  drawTriangle([
-    -0.4, -0.857142857,
-    -0.6, -0.98,
-    -0.3, -0.98
-  ]);
-  gl.uniform4f(u_FragColor, 0.0, 0.0, 1.0, 0.5);
-  // Right bicep
-  drawTriangle([
-    0.6, 0.0357143,
-    0.6, -0.285714,
-    0.45, -0.0357143
-  ]);
-  // Right forearm
-  drawTriangle([
-    0.5, -0.25,
-    0.7, -0.285714,
-    0.5, -0.5
-  ]);
-  // Lower abdomen
-  drawTriangle([
-    -0.1, 0.214286,
-    -0.2, -0.107143,
-    0, -0.107143
-  ]);
-  // Hip
-  drawTriangle([
-    -0.3, 0,
-    -0.3, -0.142857,
-    -0.1, -0.214286
-  ]);
-  // Right thigh
-  drawTriangle([
-    -0.3, 0,
-    -0.3, -0.142857,
-    -0.8, -0.428571
-  ]);
-  // Right calf
-  drawTriangle([
-    -0.7, -0.357143,
-    -0.8, -0.428571,
-    -0.6, -0.785714
-  ]);
-  // Left thigh
-  drawTriangle([
-    -0.3, -0.142857,
-    -0.1, -0.214286,
-    -0.7, -0.57142857
-  ]);
-  // Left calf
-  drawTriangle([
-    -0.5, -0.4285714,
-    -0.7, -0.57142857,
-    -0.4, -0.857142857
-  ]);
-  // brown
-  gl.uniform4f(u_FragColor, 0.5, 0.25, 0.0, 1.0);
-  // Arrow handle
-  drawTriangle([
-    -1, 1,
-    -0.55, 0.55,
-    -0.4, 0.6
-  ]);
-  // silver
-  gl.uniform4f(u_FragColor, 0.75, 0.75, 0.75, 1.0);
-  // Arrow head
-  drawTriangle([
-    -0.65, 0.5,
-    -0.35, 0.7,
-    -0.3, 0.45
-  ]);
-  // Red Chest Right Mark
-  gl.uniform4f(u_FragColor, 1.0, 0.0, 0.0, 1.0);
-  drawTriangle([
-    0.15, 0.178571,
-    0.25, 0.178571,
-    0.25, 0.107143
-  ]);
-  // Red Chest Left Mark
-  drawTriangle([
-    0.15, 0.107143,
-    0.15, 0.178571,
-    0.25, 0.107143
-  ]);
-}
-
-//#endregion
 
 function main() {
-  // Set up canvas and gl variables
   setupWebGL();
-  //Set up GLSL shaders and connect variables to GLSL
   connectVariablesToGLSL();
-
-  // Set up actions for HTML UI
   addActionsForHtmlUI();
 
-  // Register function (event handler) to be called on a mouse press
-  canvas.onmousedown = click;
-  // canvas.onmousemove = click;
-  canvas.onmousemove = function(ev) { if (ev.buttons == 1) click(ev); };
+  // Mouse down: shift‐click toggles legs falling, else start drag
+  canvas.onmousedown = ev => {
+    if (ev.shiftKey && ev.button === 0) {
+      g_legsFalling = !g_legsFalling;
+      if (!g_legsFalling) g_legFallOffset = 0;
+      return;
+    }
+    if (ev.button === 0) {
+      g_mouseDragging = true;
+      g_lastMouseX = ev.clientX;
+      g_lastMouseY = ev.clientY;
+      g_startXAngle = g_mouseXAngle;
+      g_startYAngle = g_mouseYAngle;
+    }
+  };
+  canvas.onmousemove = ev => {
+    if (g_mouseDragging) updateRotation(ev);
+  };
+  canvas.onmouseup = ev => {
+    if (ev.button === 0) g_mouseDragging = false;
+  };
+  canvas.oncontextmenu = ev => ev.preventDefault();
 
-  // Specify the color for clearing <canvas>
-  gl.clearColor(0.0, 0.0, 0.0, 1.0);
-
-  // Clear <canvas>
-  //gl.clear(gl.COLOR_BUFFER_BIT);
-
-  renderAllShapes(); // Draw the initial shapes
+  requestAnimationFrame(tick);
 }
 
-var g_shapesList = []; // The array for the position of a mouse press
+function updateRotation(ev) {
+  const dx = ev.clientX - g_lastMouseX;
+  const dy = ev.clientY - g_lastMouseY;
+  g_mouseYAngle = g_startYAngle + dx / canvas.width  * 180;
+  g_mouseXAngle = g_startXAngle - dy / canvas.height * 180;
+}
+
+function tick(now) {
+  now = now / 1000;                  // convert ms to s
+  const delta = now - g_prevTime;
+  g_prevTime = now;
+  g_seconds  = now - g_startTime;
+
+  updateAnimationAngles();
+  updateLegFall(delta);
+
+  renderAllShapes();
+  requestAnimationFrame(tick);
+}
+
+function updateAnimationAngles() {
+  if (g_paused) {
+    // zero-out or leave at last pose:
+    // g_frontLegAngle = g_backLegAngle = 0;
+    return;
+  }
+
+  // simple walk-cycle:
+  g_frontLegAngle = 30 * Math.sin(g_seconds * 2);
+  g_backLegAngle  = -30 * Math.sin(g_seconds * 2);
+}
+
+
+function updateLegFall(delta) {
+  if (g_legsFalling) {
+    g_legFallOffset += LEG_FALL_SPEED * delta;
+  }
+}
 
 function click(ev) {
-  // Extract the event click and return it in WebGL coordinates
-  let [x, y] = convertCoordinatesEventToGL(ev);
-
-  /// ChatGPT helped me with this math
-  let currentTime = performance.now();
-  let velocity = 0;
-
-  if (g_lastMousePos && g_lastMouseTime) {
-    let dx = x - g_lastMousePos[0];
-    let dy = y - g_lastMousePos[1];
-    let dt = currentTime - g_lastMouseTime;
-    let dist = Math.sqrt(dx * dx + dy * dy);
-    velocity = dist / dt; // pixels/ms
-  }
-
-  g_lastMousePos = [x, y];
-  g_lastMouseTime = currentTime;
-
-  // Create and store a new point object
-  let point;
-  if (g_seletcedType == POINT) {
-    point = new Point();
-  }
-  else if (g_seletcedType == TRIANGLE) {
-    point = new Triangle();
-  }
-  else if (g_seletcedType == CIRCLE) {
-    point = new Circle();
-    point.segments = g_seletcedSegment;
-  }
-
-  point.position = [x, y];
-  point.timestamp = performance.now();
-  
-  /// ChatGPT gave me some pointers with this portion 
-  if (g_spectrumDraw && velocity > 0) {
-    let speed = Math.min(velocity * 1000, 100);
-    point.size = Math.max(5, Math.min(30, speed));
-
-    let t = speed / 100;
-    point.color = [
-      t,
-      0.2,
-      1.0 - t,
-      g_selectedAlpha
-    ];
-  }
-  else {
-    point.color = g_selectedColor.slice();
-    point.size = g_selectedSize;
-  }
-  
-  /// ChatGPT helped me with this kaleidoscope math/code
-  if (g_kaleidoscopeMode) {
-    for (let i = 0; i < g_kaleidoscopeSegments; i++) {
-      const angle = (2 * Math.PI / g_kaleidoscopeSegments) * i;
-      const cosA = Math.cos(angle);
-      const sinA = Math.sin(angle);
-
-      const xRotated = x * cosA - y * sinA;
-      const yRotated = x * sinA + y * cosA;
-
-      let clone = Object.create(Object.getPrototypeOf(point));
-      Object.assign(clone, point);
-      clone.timestamp = performance.now();
-      clone.position = [xRotated, yRotated];
-      g_shapesList.push(clone);
-    }
-  } 
-  else {
-    g_shapesList.push(point);
-  }
-
-  // Draw every shape that is supposed to be drawn
+  const [x, y] = convertCoordinatesEventToGL(ev);
+  let shape;
+  if (g_selectedType === POINT)       shape = new Point();
+  else if (g_selectedType === TRIANGLE) shape = new Triangle();
+  else                                  shape = new Circle();
+  shape.position = [x, y];
+  shape.color    = g_selectedColor.slice();
+  shape.size     = g_selectedSize;
+  g_shapesList.push(shape);
   renderAllShapes();
 }
 
 function convertCoordinatesEventToGL(ev) {
-  var x = ev.clientX; // x coordinate of a mouse pointer
-  var y = ev.clientY; // y coordinate of a mouse pointer
-  var rect = ev.target.getBoundingClientRect();
+  let x = ev.clientX, y = ev.clientY;
+  const rect = ev.target.getBoundingClientRect();
+  x = ((x - rect.left) - canvas.width/2) / (canvas.width/2);
+  y = (canvas.height/2 - (y - rect.top)) / (canvas.height/2);
+  return [x, y];
+}
 
-  x = ((x - rect.left) - canvas.width/2)/(canvas.width/2);
-  y = (canvas.height/2 - (y - rect.top))/(canvas.height/2);
+function drawAnimal() {
+  // Colors
+  const hoofColor = [0.8, 0.8, 0.8, 1.0];
+  const bodyColor = [0.50, 0.30, 0.10, 1.0];
 
-  return([x, y]);
+  // Leg dims
+  const legThickness  = 0.225;
+  const shinThickness = legThickness * 0.8;
+  const toeThickness  = shinThickness * 0.7;
+  const toeLength     = 0.1;
+
+  // Positions / heights
+  const frontZ =  0.3, backZ = -0.3;
+  const frontY = -0.6, backY = -0.5;
+  const frontH =  0.4, backH  =  0.3;
+
+  // Head & nose params
+  const headSize  = 0.6;
+  const headY     = -0.5 + frontH/2 + headSize/2;
+  const headWidth = headSize * 0.6,
+        headHeight= headSize * 1.0,
+        headDepth = headSize * 0.4;
+  const headX     = -0.2 + (headSize - headWidth)/2;
+
+  const noseLength    = 0.5;
+  const noseThickness = 0.15;
+  const headFrontX    = -0.2 + headSize/2;
+  const zOffset       = 0.001;
+
+  // Nose verts in world space
+  const v0 = [ headFrontX + noseLength, headY, frontZ + zOffset ];
+  const v1 = [ headFrontX,              headY + noseThickness/2, frontZ + zOffset ];
+  const v2 = [ headFrontX,              headY - noseThickness/2, frontZ + zOffset ];
+  const noseVerts = [...v0, ...v1, ...v2];
+
+  // FRONT LEGS
+  [ -0.4, 0.4 ].forEach(x => {
+    const base = new Matrix4().setIdentity()
+      .translate(x, frontY + frontH/2, frontZ)
+      .rotate(g_frontLegAngle, 1,0,0)
+      .translate(0, -g_legFallOffset, 0);
+
+    const upper = new Cube();
+    upper.color = bodyColor;
+    upper.matrix = new Matrix4(base)
+      .translate(0, -frontH/2, 0)
+      .scale(legThickness, frontH, legThickness);
+    upper.render();
+
+    const lower = new Cube();
+    lower.color = bodyColor;
+    lower.matrix = new Matrix4(base)
+      .translate(0.02, -frontH + 0.25, 0)
+      .rotate(g_frontLegAngle, 1,0,0)
+      .translate(0, -frontH/2, 0)
+      .scale(shinThickness, frontH - 0.175, shinThickness);
+    lower.render();
+
+    const toe = new Cube();
+    toe.color = hoofColor;
+    toe.matrix = new Matrix4(base)
+      .translate(0.05, -frontH + 0.25, 0)
+      .rotate(g_frontLegAngle, 1,0,0)
+      .translate(0, -frontH/2, 0)
+      .rotate(g_frontLegAngle, 1,0,0)
+      .translate(0, -((frontH - 0.175)/2 + toeLength/2 - 0.065), 0)
+      .scale(toeThickness, toeLength, toeThickness);
+    toe.render();
+  });
+
+  // HEAD (thinned)
+  const head = new Cube();
+  head.color = bodyColor;
+  head.matrix.setIdentity()
+    .translate(headX, headY - 0.05, frontZ - 0.05)
+    .rotate(g_headAngle, 1, 0, 0)
+    .scale(headWidth, headHeight, headDepth + .3);
+  head.render();
+
+  // NOSE (3D triangle)
+  gl.uniformMatrix4fv(u_ModelMatrix, false, new Matrix4().setIdentity().elements);
+  gl.uniform4f(u_FragColor, bodyColor[0], bodyColor[1], bodyColor[2], bodyColor[3]);
+  drawTriangle3D(noseVerts);
+
+  // BACK LEGS
+  [ -0.4, 0.4 ].forEach(x => {
+    const baseLeg = new Matrix4().setIdentity()
+      .translate(x, backY + backH/2, backZ)
+      .rotate(g_backLegAngle, 1,0,0)
+      .translate(0, -g_legFallOffset, 0);
+
+    const upper = new Cube();
+    upper.color = bodyColor;
+    upper.matrix = new Matrix4(baseLeg)
+      .translate(0, -backH/2, 0)
+      .scale(legThickness, backH, legThickness);
+    upper.render();
+
+    const lower = new Cube();
+    lower.color = bodyColor;
+    lower.matrix = new Matrix4(baseLeg)
+      .translate(0, -backH + 0.15, 0)
+      .rotate(g_backLegAngle, 1,0,0)
+      .translate(0, -backH/2, 0)
+      .scale(shinThickness, backH, shinThickness);
+    lower.render();
+
+    const baseToe = new Matrix4(baseLeg).translate(0, 0, 0.05);
+    const toe = new Cube();
+    toe.color = hoofColor;
+    toe.matrix = new Matrix4(baseToe)
+      .translate(0, -backH + 0.15, 0)
+      .rotate(g_backLegAngle, 1,0,0)
+      .translate(0, -backH/2, 0)
+      .rotate(g_backLegAngle, 1,0,0)
+      .translate(0, -(backH/2 + toeLength/2 - 0.1), 0)
+      .scale(toeThickness, toeLength, toeThickness);
+    toe.render();
+  });
+
+  // BODY
+  const body = new Cube();
+  body.color = bodyColor;
+  body.matrix.setIdentity()
+    .translate(-0.4, -0.35, -0.3)
+    .scale(
+      2 * 0.4 + legThickness,
+      0.4,
+      Math.abs(frontZ - backZ) + legThickness
+    );
+  body.render();
 }
 
 function renderAllShapes() {
-  var startTime = performance.now();
-  
-  // Clear <canvas>
-  gl.clear(gl.COLOR_BUFFER_BIT);
+  const startTime = performance.now();
 
-  //var len = g_points.length;
-  // var len = g_shapesList.length;
-  
-  // for(var i = 0; i < len; i++) {
-  //   g_shapesList[i].render();
-  // }
+  // Orbit camera
+  const view = new Matrix4()
+    .translate(PIVOT.x, PIVOT.y, PIVOT.z)
+    .rotate(g_mouseYAngle, 0,1,0)
+    .rotate(g_mouseXAngle, 1,0,0)
+    .translate(-PIVOT.x, -PIVOT.y, -PIVOT.z);
+  gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, view.elements);
 
-  drawTriangle3D( [-1.0, 0.0, 0.0,  -0.5, -1.0, 0.0,  0.0, 0.0, 0.0] );
+  // Clear
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  var body = new Cube();
-  body.color = [1.0, 0.0, 0.0, 1.0];
-  body.render();
+  // 2D shapes
+  for (const s of g_shapesList) s.render();
 
-  var duration = performance.now() - startTime;
-  sendTextToHTML("numdot: " + len + " ms: " + Math.floor(duration) + " fps: " + Math.floor(1000/duration), "numdot");
+  // 3D horse
+  drawAnimal();
+
+  // Stats
+  const duration = performance.now() - startTime;
+  sendTextToHTML(
+    `numdot: ${g_shapesList.length}   ms: ${Math.floor(duration)}   fps: ${Math.floor(1000/duration)}`,
+    'numdot'
+  );
 }
 
 function sendTextToHTML(text, htmlID) {
-  var htmlElm = document.getElementById(htmlID);
-  if (!htmlElm) {
-    console.log('Failed to get the storage location of ' + htmlID);
-    return;
-  }
-  htmlElm.innerHTML = text;
+  const elm = document.getElementById(htmlID);
+  if (elm) elm.innerHTML = text;
 }
