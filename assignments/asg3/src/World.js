@@ -8,27 +8,45 @@ var VSHADER_SOURCE = `
   uniform mat4 u_ViewMatrix;
   uniform mat4 u_ProjectionMatrix;
   void main() {
-    gl_Position = u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
+    gl_Position = u_ProjectionMatrix * u_ViewMatrix * u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
     v_UV = a_UV;
   }`
 
 // Fragment shader program
-var FSHADER_SOURCE = `
+var FSHADER_SOURCE =`
   precision mediump float;
   varying vec2 v_UV;
   uniform vec4 u_FragColor;
   uniform sampler2D u_Sampler0;
+  uniform int u_whichTexture;
   void main() {
-    gl_FragColor = u_FragColor;
-    gl_FragColor = vec4(v_UV, 1.0, 1.0);
-    gl_FragColor = texture2D(u_Sampler0, v_UV);
+    if (u_whichTexture == -2) {
+      gl_FragColor = u_FragColor; // Use color
+    }
+    else if (u_whichTexture == -1) {
+      gl_FragColor = vec4(v_UV, 1.0, 1.0); // Use UV debug color
+    }
+    else if (u_whichTexture == 0) {
+      gl_FragColor = texture2D(u_Sampler0, v_UV); // Use texture
+    }
+    else {
+      gl_FragColor = vec4(1, .2, .2, 1); // Error, put redish
+    }
   }`
 
 // GL and GLSL handles
-let canvas, gl;
-let a_Position, u_FragColor, u_Size, u_ModelMatrix, u_GlobalRotateMatrix, u_ViewMatrix, u_ProjectionMatrix;
+let canvas;
+let gl;
+let a_Position;
 let a_UV;
+let u_FragColor;
+let u_Size;
+let u_ModelMatrix;
+let u_ViewMatrix;
+let u_ProjectionMatrix;
+let u_GlobalRotateMatrix;
 let u_Sampler0;
+let u_whichTexture;
 
 // Animation angles
 let g_yellowAngle = 0;
@@ -78,6 +96,8 @@ function connectVariablesToGLSL() {
   u_ViewMatrix   = gl.getUniformLocation(gl.program, 'u_ViewMatrix');
   u_ProjectionMatrix   = gl.getUniformLocation(gl.program, 'u_ProjectionMatrix');
   u_Sampler0   = gl.getUniformLocation(gl.program, 'u_Sampler0');
+  u_whichTexture = gl.getUniformLocation(gl.program, 'u_whichTexture');
+
 
   var identityM = new Matrix4();
   gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
@@ -211,6 +231,12 @@ function convertCoordinatesEventToGL(ev) {
 function renderAllShapes() {
   const startTime = performance.now();
 
+  var projMat = new Matrix4();
+  gl.uniformMatrix4fv(u_ProjectionMatrix, false, projMat.elements);
+
+  var viewMat = new Matrix4();
+  gl.uniformMatrix4fv(u_ViewMatrix, false, viewMat.elements);
+
   // Orbit camera around PIVOT
   const view = new Matrix4()
     .translate(PIVOT.x, PIVOT.y, PIVOT.z)
@@ -226,21 +252,13 @@ function renderAllShapes() {
 
   // Draw the animal
   const body = new Cube();
+  body.textureNum = 0;
   body.color = [1,0,0,1];
   body.matrix.setIdentity()
     .translate(-0.25,-0.75,0)
     .rotate(-5,1,0,0)
     .scale(0.5,0.3,0.5);
   body.render();
-
-  const platform = new Cube();
-  platform.color = [0.5, 0.5, 0.5, 1.0];              // grey
-  platform.matrix.setIdentity()
-    // x,z match your animal’s body (which is at x=–0.25,z=0)
-    .translate(-0.25, -0.925, 0)
-    // wide and very flat
-    .scale(1.5, 0.05, 1.5);
-  platform.render();
 
   const yellow = new Cube();
   yellow.color = [1,1,0,1];
