@@ -1,72 +1,63 @@
-// BlockyAnimal.js
-
-// Vertex shader
 var VSHADER_SOURCE = `
+  precision mediump float;
   attribute vec4 a_Position;
-  uniform float u_Size;
+  attribute vec2 a_UV;
+  varying vec2 v_UV;
   uniform mat4 u_ModelMatrix;
   uniform mat4 u_GlobalRotateMatrix;
+  uniform mat4 u_ViewMatrix;
+  uniform mat4 u_ProjectionMatrix;
   void main() {
     gl_Position = u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
-    gl_PointSize = u_Size;
-  }`;
+    v_UV = a_UV;
+  }`
 
-// Fragment shader
+// Fragment shader program
 var FSHADER_SOURCE = `
   precision mediump float;
+  varying vec2 v_UV;
   uniform vec4 u_FragColor;
   void main() {
     gl_FragColor = u_FragColor;
-  }`;
+    gl_FragColor = vec4(v_UV, 1.0, 1.0);
+  }`
 
-// GL & GLSL handles
+// GL and GLSL handles
 let canvas, gl;
-let a_Position, u_FragColor, u_Size, u_ModelMatrix, u_GlobalRotateMatrix;
-
-let g_paused = false;   // when true, we don’t advance any of the animations
+let a_Position, u_FragColor, u_Size, u_ModelMatrix, u_GlobalRotateMatrix, u_ViewMatrix, u_ProjectionMatrix;
+let a_UV;
 
 // Animation angles
-let g_frontLegAngle   = 0,
-    g_backLegAngle    = 0;
+let g_yellowAngle = 0;
+let g_magentaAngle = 0;
+let g_yellowAnimation = false;
+let g_magentaAnimation = false;
 
-    // after your other let-statements:
-let g_headAngle  = 20;   // default “nose-down” tilt
+// Mouse rotation angles
+let g_mouseXAngle = 0;
+let g_mouseYAngle = 0;
+
+// for relative drag:
+let g_lastMouseX = 0, g_lastMouseY = 0;
+let g_startXAngle = 0, g_startYAngle = 0;
 
 
-// Leg‐fall state
-let g_legsFalling   = false,
-    g_legFallOffset = 0;
-const LEG_FALL_SPEED = 2.0;  // world units/sec
+// Dragging flag for rotation
+let g_mouseDragging = false;
 
-// Time tracking
-let g_startTime = performance.now() / 1000,
-    g_prevTime  = g_startTime,
-    g_seconds   = 0;
-
-// Camera‐drag state
-let g_mouseXAngle = 0,
-    g_mouseYAngle = 0,
-    g_lastMouseX  = 0,
-    g_lastMouseY  = 0,
-    g_startXAngle = 0,
-    g_startYAngle = 0,
-    g_mouseDragging = false;
-
-// List of 2D shapes drawn by clicks
+// List of all drawn shapes
 let g_shapesList = [];
 
-// Pivot for orbiting camera
-const PIVOT = { x:0, y:-0.5, z:0 };
+// Pivot point around which to orbit (center of the animal)
+const PIVOT = { x: 0, y: -0.5, z: 0 };
 
 function setupWebGL() {
   canvas = document.getElementById('webgl');
   gl = canvas.getContext('webgl', { preserveDrawingBuffer: true });
   if (!gl) {
-    console.error('WebGL not supported');
-    return;
+    console.error('Failed to get WebGL context');
   }
   gl.enable(gl.DEPTH_TEST);
-  gl.clearDepth(1.0);
   gl.clearColor(0.6, 0.8, 1.0, 1.0);
 }
 
@@ -75,90 +66,85 @@ function connectVariablesToGLSL() {
     console.error('Failed to initialize shaders.');
     return;
   }
-  a_Position           = gl.getAttribLocation(gl.program, 'a_Position');
-  u_FragColor          = gl.getUniformLocation(gl.program, 'u_FragColor');
-  u_Size               = gl.getUniformLocation(gl.program, 'u_Size');
-  u_ModelMatrix        = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
+  a_Position    = gl.getAttribLocation(gl.program, 'a_Position');
+  a_UV    = gl.getAttribLocation(gl.program, 'a_UV');
+  u_FragColor   = gl.getUniformLocation(gl.program, 'u_FragColor');
+  u_Size        = gl.getUniformLocation(gl.program, 'u_Size');
+  u_ModelMatrix = gl.getUniformLocation(gl.program, 'u_ModelMatrix');
   u_GlobalRotateMatrix = gl.getUniformLocation(gl.program, 'u_GlobalRotateMatrix');
+  u_ViewMatrix   = gl.getUniformLocation(gl.program, 'u_ViewMatrix');
+  u_ProjectionMatrix   = gl.getUniformLocation(gl.program, 'u_ProjectionMatrix');
 }
 
 function addActionsForHtmlUI() {
-  document.getElementById('pauseAnim').onclick  = () => { g_paused = false; };
-  document.getElementById('resumeAnim').onclick = () => { g_paused = true; };
-  document.getElementById('headSlider').oninput  = e => {
-    g_headAngle  = +e.target.value;
-    renderAllShapes();
-  };
+
+  document.getElementById('animationYellowOnButton').onclick  = () => g_yellowAnimation = true;
+  document.getElementById('animationYellowOffButton').onclick = () => g_yellowAnimation = false;
+  document.getElementById('animationMagentaOnButton').onclick = () => g_magentaAnimation = true;
+  document.getElementById('animationMagentaOffButton').onclick= () => g_magentaAnimation = false;
 }
 
 function main() {
   setupWebGL();
   connectVariablesToGLSL();
   addActionsForHtmlUI();
+  gl.clearColor(0.6, 0.8, 1.0, 1.0);
 
-  // Mouse down: shift‐click toggles legs falling, else start drag
-  canvas.onmousedown = ev => {
-    if (ev.shiftKey && ev.button === 0) {
-      g_legsFalling = !g_legsFalling;
-      if (!g_legsFalling) g_legFallOffset = 0;
-      return;
-    }
-    if (ev.button === 0) {
-      g_mouseDragging = true;
-      g_lastMouseX = ev.clientX;
-      g_lastMouseY = ev.clientY;
-      g_startXAngle = g_mouseXAngle;
-      g_startYAngle = g_mouseYAngle;
-    }
-  };
-  canvas.onmousemove = ev => {
-    if (g_mouseDragging) updateRotation(ev);
-  };
-  canvas.onmouseup = ev => {
-    if (ev.button === 0) g_mouseDragging = false;
-  };
-  canvas.oncontextmenu = ev => ev.preventDefault();
+  // Mouse events: only camera‐drag on down/move/up
 
-  requestAnimationFrame(tick);
-}
+    canvas.onmousedown = ev => {
+      if (ev.button === 0) {
+        g_mouseDragging = true;
+        // record where the drag started:
+        g_lastMouseX   = ev.clientX;
+        g_lastMouseY   = ev.clientY;
+        // record the camera’s current angles:
+        g_startYAngle  = g_mouseYAngle;
+        g_startXAngle  = g_mouseXAngle;
+      }
+    };
+
+    canvas.onmousemove = ev => {
+      if (g_mouseDragging) {
+        updateRotation(ev);
+      }
+    };
+
+    canvas.onmouseup = ev => {
+      if (ev.button === 0) {
+        g_mouseDragging = false;
+      }
+    };
+
+    canvas.oncontextmenu = ev => ev.preventDefault();
+
+    gl.clearColor(0,0,0,1);
+    requestAnimationFrame(tick);
+  }
+
 
 function updateRotation(ev) {
+  // how far we’ve moved since mousedown:
   const dx = ev.clientX - g_lastMouseX;
   const dy = ev.clientY - g_lastMouseY;
-  g_mouseYAngle = g_startYAngle + dx / canvas.width  * 180;
-  g_mouseXAngle = g_startXAngle - dy / canvas.height * 180;
+  // translate pixels → degrees (180° across full width/height):
+  g_mouseYAngle = g_startYAngle + (dx / canvas.width)  * 180;
+  g_mouseXAngle = g_startXAngle - (dy / canvas.height) * 180;
 }
 
-function tick(now) {
-  now = now / 1000;                  // convert ms to s
-  const delta = now - g_prevTime;
-  g_prevTime = now;
-  g_seconds  = now - g_startTime;
+let g_startTime = performance.now()/1000;
+let g_seconds   = 0;
 
+function tick() {
+  g_seconds = performance.now()/1000 - g_startTime;
   updateAnimationAngles();
-  updateLegFall(delta);
-
   renderAllShapes();
   requestAnimationFrame(tick);
 }
 
 function updateAnimationAngles() {
-  if (g_paused) {
-    // zero-out or leave at last pose:
-    // g_frontLegAngle = g_backLegAngle = 0;
-    return;
-  }
-
-  // simple walk-cycle:
-  g_frontLegAngle = 30 * Math.sin(g_seconds * 2);
-  g_backLegAngle  = -30 * Math.sin(g_seconds * 2);
-}
-
-
-function updateLegFall(delta) {
-  if (g_legsFalling) {
-    g_legFallOffset += LEG_FALL_SPEED * delta;
-  }
+  if (g_yellowAnimation)  g_yellowAngle  = 45 * Math.sin(g_seconds);
+  if (g_magentaAnimation) g_magentaAngle = 45 * Math.sin(3 * g_seconds);
 }
 
 function click(ev) {
@@ -182,143 +168,10 @@ function convertCoordinatesEventToGL(ev) {
   return [x, y];
 }
 
-function drawAnimal() {
-  // Colors
-  const hoofColor = [0.8, 0.8, 0.8, 1.0];
-  const bodyColor = [0.50, 0.30, 0.10, 1.0];
-
-  // Leg dims
-  const legThickness  = 0.225;
-  const shinThickness = legThickness * 0.8;
-  const toeThickness  = shinThickness * 0.7;
-  const toeLength     = 0.1;
-
-  // Positions / heights
-  const frontZ =  0.3, backZ = -0.3;
-  const frontY = -0.6, backY = -0.5;
-  const frontH =  0.4, backH  =  0.3;
-
-  // Head & nose params
-  const headSize  = 0.6;
-  const headY     = -0.5 + frontH/2 + headSize/2;
-  const headWidth = headSize * 0.6,
-        headHeight= headSize * 1.0,
-        headDepth = headSize * 0.4;
-  const headX     = -0.2 + (headSize - headWidth)/2;
-
-  const noseLength    = 0.5;
-  const noseThickness = 0.15;
-  const headFrontX    = -0.2 + headSize/2;
-  const zOffset       = 0.001;
-
-  // Nose verts in world space
-  const v0 = [ headFrontX + noseLength, headY, frontZ + zOffset ];
-  const v1 = [ headFrontX,              headY + noseThickness/2, frontZ + zOffset ];
-  const v2 = [ headFrontX,              headY - noseThickness/2, frontZ + zOffset ];
-  const noseVerts = [...v0, ...v1, ...v2];
-
-  // FRONT LEGS
-  [ -0.4, 0.4 ].forEach(x => {
-    const base = new Matrix4().setIdentity()
-      .translate(x, frontY + frontH/2, frontZ)
-      .rotate(g_frontLegAngle, 1,0,0)
-      .translate(0, -g_legFallOffset, 0);
-
-    const upper = new Cube();
-    upper.color = bodyColor;
-    upper.matrix = new Matrix4(base)
-      .translate(0, -frontH/2, 0)
-      .scale(legThickness, frontH, legThickness);
-    upper.render();
-
-    const lower = new Cube();
-    lower.color = bodyColor;
-    lower.matrix = new Matrix4(base)
-      .translate(0.02, -frontH + 0.25, 0)
-      .rotate(g_frontLegAngle, 1,0,0)
-      .translate(0, -frontH/2, 0)
-      .scale(shinThickness, frontH - 0.175, shinThickness);
-    lower.render();
-
-    const toe = new Cube();
-    toe.color = hoofColor;
-    toe.matrix = new Matrix4(base)
-      .translate(0.05, -frontH + 0.25, 0)
-      .rotate(g_frontLegAngle, 1,0,0)
-      .translate(0, -frontH/2, 0)
-      .rotate(g_frontLegAngle, 1,0,0)
-      .translate(0, -((frontH - 0.175)/2 + toeLength/2 - 0.065), 0)
-      .scale(toeThickness, toeLength, toeThickness);
-    toe.render();
-  });
-
-  // HEAD (thinned)
-  const head = new Cube();
-  head.color = bodyColor;
-  head.matrix.setIdentity()
-    .translate(headX, headY - 0.05, frontZ - 0.05)
-    .rotate(g_headAngle, 1, 0, 0)
-    .scale(headWidth, headHeight, headDepth + .3);
-  head.render();
-
-  // NOSE (3D triangle)
-  gl.uniformMatrix4fv(u_ModelMatrix, false, new Matrix4().setIdentity().elements);
-  gl.uniform4f(u_FragColor, bodyColor[0], bodyColor[1], bodyColor[2], bodyColor[3]);
-  drawTriangle3D(noseVerts);
-
-  // BACK LEGS
-  [ -0.4, 0.4 ].forEach(x => {
-    const baseLeg = new Matrix4().setIdentity()
-      .translate(x, backY + backH/2, backZ)
-      .rotate(g_backLegAngle, 1,0,0)
-      .translate(0, -g_legFallOffset, 0);
-
-    const upper = new Cube();
-    upper.color = bodyColor;
-    upper.matrix = new Matrix4(baseLeg)
-      .translate(0, -backH/2, 0)
-      .scale(legThickness, backH, legThickness);
-    upper.render();
-
-    const lower = new Cube();
-    lower.color = bodyColor;
-    lower.matrix = new Matrix4(baseLeg)
-      .translate(0, -backH + 0.15, 0)
-      .rotate(g_backLegAngle, 1,0,0)
-      .translate(0, -backH/2, 0)
-      .scale(shinThickness, backH, shinThickness);
-    lower.render();
-
-    const baseToe = new Matrix4(baseLeg).translate(0, 0, 0.05);
-    const toe = new Cube();
-    toe.color = hoofColor;
-    toe.matrix = new Matrix4(baseToe)
-      .translate(0, -backH + 0.15, 0)
-      .rotate(g_backLegAngle, 1,0,0)
-      .translate(0, -backH/2, 0)
-      .rotate(g_backLegAngle, 1,0,0)
-      .translate(0, -(backH/2 + toeLength/2 - 0.1), 0)
-      .scale(toeThickness, toeLength, toeThickness);
-    toe.render();
-  });
-
-  // BODY
-  const body = new Cube();
-  body.color = bodyColor;
-  body.matrix.setIdentity()
-    .translate(-0.4, -0.35, -0.3)
-    .scale(
-      2 * 0.4 + legThickness,
-      0.4,
-      Math.abs(frontZ - backZ) + legThickness
-    );
-  body.render();
-}
-
 function renderAllShapes() {
   const startTime = performance.now();
 
-  // Orbit camera
+  // Orbit camera around PIVOT
   const view = new Matrix4()
     .translate(PIVOT.x, PIVOT.y, PIVOT.z)
     .rotate(g_mouseYAngle, 0,1,0)
@@ -326,16 +179,48 @@ function renderAllShapes() {
     .translate(-PIVOT.x, -PIVOT.y, -PIVOT.z);
   gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, view.elements);
 
-  // Clear
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  // 2D shapes
+  // Draw shapes
   for (const s of g_shapesList) s.render();
 
-  // 3D horse
-  drawAnimal();
+  // Draw the animal
+  const body = new Cube();
+  body.color = [1,0,0,1];
+  body.matrix.setIdentity()
+    .translate(-0.25,-0.75,0)
+    .rotate(-5,1,0,0)
+    .scale(0.5,0.3,0.5);
+  body.render();
 
-  // Stats
+  const platform = new Cube();
+  platform.color = [0.5, 0.5, 0.5, 1.0];              // grey
+  platform.matrix.setIdentity()
+    // x,z match your animal’s body (which is at x=–0.25,z=0)
+    .translate(-0.25, -0.925, 0)
+    // wide and very flat
+    .scale(1.5, 0.05, 1.5);
+  platform.render();
+
+  const yellow = new Cube();
+  yellow.color = [1,1,0,1];
+  yellow.matrix.setTranslate(0,-0.5,0)
+    .rotate(-5,1,0,0)
+    .rotate(-g_yellowAngle,0,0,1);
+  const yellowBase = new Matrix4(yellow.matrix);
+  yellow.matrix.scale(0.25,0.7,0.5)
+    .translate(-0.5,0,0);
+  yellow.render();
+
+  const magenta = new Cube();
+  magenta.color = [1,0,1,1];
+  magenta.matrix = yellowBase
+    .translate(0,0.65,0)
+    .rotate(g_magentaAngle,0,0,1)
+    .scale(0.3,0.3,0.3)
+    .translate(-0.5,0,-0.001);
+  magenta.render();
+
   const duration = performance.now() - startTime;
   sendTextToHTML(
     `numdot: ${g_shapesList.length}   ms: ${Math.floor(duration)}   fps: ${Math.floor(1000/duration)}`,
@@ -345,5 +230,9 @@ function renderAllShapes() {
 
 function sendTextToHTML(text, htmlID) {
   const elm = document.getElementById(htmlID);
-  if (elm) elm.innerHTML = text;
+  if (!elm) {
+    console.error(`Failed to find HTML element "${htmlID}"`);
+    return;
+  }
+  elm.innerHTML = text;
 }

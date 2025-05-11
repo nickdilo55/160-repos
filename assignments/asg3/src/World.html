@@ -12,8 +12,24 @@
   <p></p>
 
   <p id="numdot">XXX</p>
-  <p>Head Angle:  <input id="headSlider"  type="range" min="-45" max="45" value="20"></p>
 
+  <p>
+    Yellow <input type="range" min="-45" max="45"  value="0"   class="slider" id="yellowSlide">
+  </p>
+  <p>
+    Magenta <input type="range" min="-45" max="45"  value="0"   class="slider" id="magentaSlide">
+  </p>
+  <p>
+    Camera Angle  <input type="range" min="0" max="90"  value="5"   class="slider" id="angleSlide">
+  </p>
+  Yellow Animation:
+  <button type="button" id="animationYellowOnButton">ON</button>
+  <button type="button" id="animationYellowOffButton">OFF</button>
+  </p>
+  Magenta Animation:
+  <button type="button" id="animationMagentaOnButton">ON</button>
+  <button type="button" id="animationMagentaOffButton">OFF</button>
+  </p>
   <p>
   <button type="button" id="pauseAnim">ON</button>
   <button type="button" id="resumeAnim">OFF</button>
