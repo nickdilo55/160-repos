@@ -164,6 +164,8 @@ function main() {
       }
     };
 
+    document.onkeydown = keydown;
+
     canvas.onmousemove = ev => {
       if (g_mouseDragging) {
         updateRotation(ev);
@@ -200,6 +202,17 @@ function tick() {
   updateAnimationAngles();
   renderAllShapes();
   requestAnimationFrame(tick);
+}
+
+function keydown(ev) {
+  if (ev.keyCode == 39) {
+    g_eye[0] += 0.2;
+  } else
+    if (ev.keyCode == 37) {
+      g_eye[0] -= 0.2;
+    }
+    renderAllShapes();
+    console.log(ev.keyCode);
 }
 
 function updateAnimationAngles() {
