@@ -228,13 +228,19 @@ function convertCoordinatesEventToGL(ev) {
   return [x, y];
 }
 
+var g_eye = [0,0,3];
+var g_at = [0,0,-100];
+var g_up = [0,1,0];
+
 function renderAllShapes() {
-  const startTime = performance.now();
+  var startTime = performance.now();
 
   var projMat = new Matrix4();
+  projMat.setPerspective(60, canvas.width/canvas.height, 1, 100);
   gl.uniformMatrix4fv(u_ProjectionMatrix, false, projMat.elements);
 
   var viewMat = new Matrix4();
+  viewMat.setLookAt(g_eye[0], g_eye[1], g_eye[2], g_at[0], g_at[1], g_at[2], g_up[0], g_up[1], g_up[2]);
   gl.uniformMatrix4fv(u_ViewMatrix, false, viewMat.elements);
 
   // Orbit camera around PIVOT
@@ -278,6 +284,11 @@ function renderAllShapes() {
     .scale(0.3,0.3,0.3)
     .translate(-0.5,0,-0.001);
   magenta.render();
+
+  var ground = new Cube();
+  ground.matrix.translate(0,0,-1);
+  ground.matrix.scale(2,.1,2);
+  ground.render();
 
   const duration = performance.now() - startTime;
   sendTextToHTML(
