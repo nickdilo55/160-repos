@@ -253,16 +253,46 @@ var g_eye = [0,0,3];
 var g_at = [0,0,-100];
 var g_up = [0,1,0];
 
-var g_map = [
-  [1, 1, 1, 1, 1, 1, 1, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 1, 1, 0, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1],
-  [1, 0, 0, 0, 1, 0, 0, 1],
-  [1, 0, 0, 0, 0, 0, 0, 1],
+// --- at top of World.js, alongside your g_map definition: ---
+const g_map = [
+  [1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,1,0,1],
+  [1,0,1,1,1,1,0,1],
+  [1,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,1,1],
+  [1,0,1,0,0,0,0,1],
+  [1,0,1,1,1,0,0,1],
+  [1,1,1,0,0,0,0,1],
 ];
+
+function drawMap() {
+  const rows = g_map.length;
+  const cols = g_map[0].length;
+  const blockSize = 1;
+  const halfW = cols  / 2;
+  const halfD = rows  / 2;
+  const floorY = -1.2;      // same as your floor translate Y
+  const wallHeight = 1;      // 1 unit tall walls
+
+  for (let z = 0; z < rows; z++) {
+    for (let x = 0; x < cols; x++) {
+      if (g_map[z][x] === 1) {
+        const wall = new Cube();
+        wall.textureNum = -2;                    // plain color
+        wall.color      = [0.5, 0.5, 0.5, 1];    // gray walls
+        wall.matrix.setIdentity()
+          .translate(
+            x - halfW + blockSize/2,
+            floorY + wallHeight/2,
+            z - halfD + blockSize/2
+          )
+          .scale(blockSize, wallHeight, blockSize);
+        wall.render();
+      }
+    }
+  }
+}
+
 
 function renderAllShapes() {
   const startTime = performance.now();
@@ -353,6 +383,8 @@ function renderAllShapes() {
     .translate(-5,  -0.75, -5)  // move back by half‐width & half‐depth
     .scale    (10, 0.01, 10);
   floor.render();
+
+  drawMap();
 
   // 12) Show performance stats:
   const ms = performance.now() - startTime;
