@@ -338,6 +338,13 @@ function renderAllShapes() {
   .scale(0.3, 0.3, 0.3);
   magenta.render();
 
+  var sky = new Cube();
+  sky.color = [1,0,0,1];
+  sky.textureNum = 0;
+  sky.matrix.scale(50,50,50);
+  sky.matrix.translate(-.5,-.5,-.5);
+  sky.render();
+
   const floor = new Cube();
   floor.textureNum = -2;
   floor.color      = [0.2, 0.8, 0.2, 1];
