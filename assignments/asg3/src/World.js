@@ -148,6 +148,8 @@ function main() {
   connectVariablesToGLSL();
   addActionsForHtmlUI();
   initTextures(gl, 0);
+
+  g_camera = new Camera(canvas);
   gl.clearColor(0.6, 0.8, 1.0, 1.0);
 
   // Mouse events: only camera‐drag on down/move/up
@@ -205,14 +207,20 @@ function tick() {
 }
 
 function keydown(ev) {
-  if (ev.keyCode == 39) {
-    g_eye[0] += 0.2;
-  } else
-    if (ev.keyCode == 37) {
-      g_eye[0] -= 0.2;
-    }
-    renderAllShapes();
-    console.log(ev.keyCode);
+  const speed = 0.2;
+  const turn = 2;
+
+  switch(ev.key) {
+    case 'w': g_camera.moveForward(speed); break;
+    case 's': g_camera.moveBackwards(speed); break;
+    case 'a': g_camera.moveLeft(speed); break;
+    case 'd': g_camera.moveRight(speed); break;
+    case 'q': g_camera.panLeft(turn); break;
+    case 'e': g_camera.panRight(turn); break;
+  }
+
+  renderAllShapes();
+  console.log(ev.keycode);
 }
 
 function updateAnimationAngles() {
@@ -245,70 +253,108 @@ var g_eye = [0,0,3];
 var g_at = [0,0,-100];
 var g_up = [0,1,0];
 
+var g_map = [
+  [1, 1, 1, 1, 1, 1, 1, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 1, 1, 0, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1],
+  [1, 0, 0, 0, 1, 0, 0, 1],
+  [1, 0, 0, 0, 0, 0, 0, 1],
+];
+
 function renderAllShapes() {
-  var startTime = performance.now();
+  const startTime = performance.now();
 
-  var projMat = new Matrix4();
-  projMat.setPerspective(60, canvas.width/canvas.height, 1, 100);
-  gl.uniformMatrix4fv(u_ProjectionMatrix, false, projMat.elements);
+  // 1) Update camera’s projection for any canvas resize:
+  g_camera.resize();
+  gl.uniformMatrix4fv(
+    u_ProjectionMatrix,
+    false,
+    g_camera.projectionMatrix.elements
+  );
 
-  var viewMat = new Matrix4();
-  viewMat.setLookAt(g_eye[0], g_eye[1], g_eye[2], g_at[0], g_at[1], g_at[2], g_up[0], g_up[1], g_up[2]);
-  gl.uniformMatrix4fv(u_ViewMatrix, false, viewMat.elements);
-
-  // Orbit camera around PIVOT
-  const view = new Matrix4()
+  // 2) Build an “orbit” around your PIVOT (for mouse drag):
+  const orbit = new Matrix4()
     .translate(PIVOT.x, PIVOT.y, PIVOT.z)
     .rotate(g_mouseYAngle, 0,1,0)
     .rotate(g_mouseXAngle, 1,0,0)
     .translate(-PIVOT.x, -PIVOT.y, -PIVOT.z);
-  gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, view.elements);
 
+  // 3) Combine lookAt + orbit into one full view matrix:
+  const fullView = new Matrix4(g_camera.viewMatrix)
+    .multiply(orbit);
+  gl.uniformMatrix4fv(
+    u_ViewMatrix,
+    false,
+    fullView.elements
+  );
+
+  // 4) We baked the orbit into fullView, so global-rotate is now identity:
+  gl.uniformMatrix4fv(
+    u_GlobalRotateMatrix,
+    false,
+    new Matrix4().elements
+  );
+
+  // 5) Clear the frame and depth buffer before drawing:
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  // Draw shapes
-  for (const s of g_shapesList) s.render();
+  // 7) Draw any 2D shapes you added with click():
+  for (const s of g_shapesList) {
+    s.render();
+  }
 
-  // Draw the animal
+  // 8) Draw the animal body (textured):
   const body = new Cube();
   body.textureNum = 0;
-  body.color = [1,0,0,1];
+  body.color      = [1,0,0,1];
   body.matrix.setIdentity()
-    .translate(-0.25,-0.75,0)
-    .rotate(-5,1,0,0)
-    .scale(0.5,0.3,0.5);
+    .translate(-0.25, -0.75, -0.25)
+    .rotate(-5,   1,0,0)
+    .scale(0.5, 0.3, 0.5);
   body.render();
 
+  // 9) Draw the yellow arm (UV-gradient):
   const yellow = new Cube();
-  yellow.color = [1,1,0,1];
-  yellow.matrix.setTranslate(0,-0.5,0)
-    .rotate(-5,1,0,0)
-    .rotate(-g_yellowAngle,0,0,1);
-  const yellowBase = new Matrix4(yellow.matrix);
-  yellow.matrix.scale(0.25,0.7,0.5)
-    .translate(-0.5,0,0);
+  yellow.textureNum = -1;
+  yellow.color      = [1,1,0,1];
+  yellow.matrix
+  .setIdentity()
+  .translate(-0.125, -0.5, -0.25)       // half of 0.25 in X, half of 0.5 in Z
+  .rotate(-5,1,0,0)
+  .rotate(-g_yellowAngle, 0,0,1)
+  .scale(0.25, 0.7, 0.5);
   yellow.render();
 
+  // 10) Draw the magenta “hand” (textured):
   const magenta = new Cube();
-  magenta.color = [1,0,1,1];
-  magenta.matrix = yellowBase
-    .translate(0,0.65,0)
-    .rotate(g_magentaAngle,0,0,1)
-    .scale(0.3,0.3,0.3)
-    .translate(-0.5,0,-0.001);
+  magenta.textureNum = 0;
+  magenta.color      = [1,0,1,1];
+  magenta.matrix = new Matrix4(yellow.matrix)
+  .translate(-0.15, 0.65, -0.15)
+  .rotate(g_magentaAngle, 0,0,1)
+  .scale(0.3, 0.3, 0.3);
   magenta.render();
 
-  var ground = new Cube();
-  ground.matrix.translate(0,0,-1);
-  ground.matrix.scale(2,.1,2);
-  ground.render();
+  const floor = new Cube();
+  floor.textureNum = -2;
+  floor.color      = [0.2, 0.8, 0.2, 1];
+  floor.matrix
+    .setIdentity()
+    .translate(-5,  -0.75, -5)  // move back by half‐width & half‐depth
+    .scale    (10, 0.01, 10);
+  floor.render();
 
-  const duration = performance.now() - startTime;
+  // 12) Show performance stats:
+  const ms = performance.now() - startTime;
   sendTextToHTML(
-    `numdot: ${g_shapesList.length}   ms: ${Math.floor(duration)}   fps: ${Math.floor(1000/duration)}`,
+    `numdot: ${g_shapesList.length}   ms: ${Math.floor(ms)}   fps: ${Math.floor(1000/ms)}`,
     'numdot'
   );
 }
+
 
 function sendTextToHTML(text, htmlID) {
   const elm = document.getElementById(htmlID);
