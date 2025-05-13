@@ -12,12 +12,13 @@ var VSHADER_SOURCE = `
     v_UV = a_UV;
   }`;
 
-// Fragment shader program
 var FSHADER_SOURCE = `
   precision mediump float;
   varying vec2 v_UV;
   uniform vec4 u_FragColor;
   uniform sampler2D u_Sampler0;
+  uniform sampler2D u_Sampler1;
+  uniform sampler2D u_Sampler2;
   uniform int u_whichTexture;
   void main() {
     if (u_whichTexture == -2) {
@@ -26,62 +27,49 @@ var FSHADER_SOURCE = `
       gl_FragColor = vec4(v_UV, 1.0, 1.0);
     } else if (u_whichTexture == 0) {
       gl_FragColor = texture2D(u_Sampler0, v_UV);
+    } else if (u_whichTexture == 1) {
+      gl_FragColor = texture2D(u_Sampler1, v_UV);
+    } else if (u_whichTexture == 2) {
+      gl_FragColor = texture2D(u_Sampler2, v_UV);
     } else {
       gl_FragColor = vec4(1.0, 0.2, 0.2, 1.0);
     }
+
   }`;
 
-// GL and GLSL handles
 let canvas, gl;
 let a_Position, a_UV;
 let u_FragColor, u_Size;
 let u_ModelMatrix, u_ViewMatrix, u_ProjectionMatrix, u_GlobalRotateMatrix;
-let u_Sampler0, u_whichTexture;
+let u_Sampler0, u_Sampler1, u_whichTexture;
 let hedgeTexture;
-
-// Animation angles
-let g_yellowAngle = 0, g_magentaAngle = 0;
-let g_yellowAnimation = false, g_magentaAnimation = false;
-
-// Mouse drag rotation angles
 let g_mouseXAngle = 0, g_mouseYAngle = 0;
 let g_lastMouseX = 0, g_lastMouseY = 0;
 let g_startXAngle = 0, g_startYAngle = 0;
 let g_mouseDragging = false;
 
-// Shapes drawn via click()
 let g_shapesList = [];
 
-// Pivot for orbit rotation
 const PIVOT = { x: 0, y: -0.5, z: 0 };
-
-// Map size and array (32×32) — borders=1, interior=0
 const MAP_SIZE = 32;
-
-// Simple odd-step “recursive backtracker” maze generator
 function generateMaze(size) {
-  // 1) Start with a grid full of walls (1)
   const map = Array.from({ length: size }, () =>
     Array.from({ length: size }, () => 1)
   );
-
-  // 2) Carve passages at odd indices only
   const stack = [];
   const start = [1, 1];
   map[start[1]][start[0]] = 0;
   stack.push(start);
 
   const dirs = [
-    [ 2,  0], // right
-    [-2,  0], // left
-    [ 0,  2], // down
-    [ 0, -2], // up
+    [ 2,  0],
+    [-2,  0],
+    [ 0,  2],
+    [ 0, -2],
   ];
 
   while (stack.length) {
     const [x, y] = stack[stack.length - 1];
-
-    // find unvisited neighbors two cells away
     const neighbors = dirs
       .map(([dx, dy]) => [x + dx, y + dy, x + dx/2, y + dy/2])
       .filter(([nx, ny]) =>
@@ -91,16 +79,13 @@ function generateMaze(size) {
       );
 
     if (neighbors.length) {
-      // pick a random neighbor
       const [nx, ny, wx, wy] = neighbors[
         Math.floor(Math.random() * neighbors.length)
       ];
-      // carve the wall and the cell
       map[wy][wx] = 0;
       map[ny][nx] = 0;
       stack.push([nx, ny]);
     } else {
-      // backtrack
       stack.pop();
     }
   }
@@ -108,7 +93,6 @@ function generateMaze(size) {
   return map;
 }
 
-// carve out a clear central plaza (no walls in a 7×7 block)
 function clearCenter(map, radius = 3) {
   const center = Math.floor(map.length / 2);
   for (let y = center - radius; y <= center + radius; y++) {
@@ -118,9 +102,8 @@ function clearCenter(map, radius = 3) {
   }
 }
 
-// replace your old g_map with:
 let g_map = generateMaze(MAP_SIZE);
-clearCenter(g_map, /* radius= */3);
+clearCenter(g_map, 3);
 
 function setupWebGL() {
   canvas = document.getElementById('webgl');
@@ -144,25 +127,62 @@ function connectVariablesToGLSL() {
   u_ViewMatrix         = gl.getUniformLocation(gl.program, 'u_ViewMatrix');
   u_ProjectionMatrix   = gl.getUniformLocation(gl.program, 'u_ProjectionMatrix');
   u_Sampler0           = gl.getUniformLocation(gl.program, 'u_Sampler0');
+  u_Sampler1           = gl.getUniformLocation(gl.program, 'u_Sampler1');
+  u_Sampler2           = gl.getUniformLocation(gl.program, 'u_Sampler2');
   u_whichTexture       = gl.getUniformLocation(gl.program, 'u_whichTexture');
 
   const identityM = new Matrix4();
   gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
 }
 
-function addActionsForHtmlUI() {
-  document.getElementById('animationYellowOnButton').onclick  = () => g_yellowAnimation = true;
-  document.getElementById('animationYellowOffButton').onclick = () => g_yellowAnimation = false;
-  document.getElementById('animationMagentaOnButton').onclick = () => g_magentaAnimation = true;
-  document.getElementById('animationMagentaOffButton').onclick= () => g_magentaAnimation = false;
-}
-
 function initTextures() {
-  const image = new Image();
-  image.onload = () => sendTextureToTEXTURE0(image);
-  image.src = 'sky.png';
+  const skyImg = new Image();
+  skyImg.onload = () => {
+    const tex0 = gl.createTexture();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex0);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, skyImg
+    );
+    gl.uniform1i(u_Sampler0, 0);
+  };
+  skyImg.src = 'sky.png';
+
+  const hedgeImg = new Image();
+  hedgeImg.onload = () => {
+    const tex1 = gl.createTexture();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, tex1);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, hedgeImg
+    );
+    gl.uniform1i(u_Sampler1, 1);
+  };
+  hedgeImg.src = 'hedge.png';
+
+  const stoneImg = new Image();
+  stoneImg.onload = () => {
+    const tex2 = gl.createTexture();
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, tex2);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texImage2D(
+      gl.TEXTURE_2D, 0,
+      gl.RGB, gl.RGB, gl.UNSIGNED_BYTE,
+      stoneImg
+    );
+    gl.uniform1i(u_Sampler2, 2);
+  };
+  stoneImg.src = 'stone.png';
+
   return true;
 }
+
 
 function sendTextureToTEXTURE0(image) {
   const texture = gl.createTexture();
@@ -184,17 +204,14 @@ function drawMap() {
 
   for (let z = 0; z < rows; z++) {
     for (let x = 0; x < cols; x++) {
-      if (g_map[z][x] === 1) {
+      if (g_map[z][x] === 1 || g_map[z][x] === 2) {
         const wall = new Cube();
-        wall.textureNum = -2;
-        wall.color      = [0.5, 0.5, 0.5, 1];
+        wall.textureNum = g_map[z][x] === 1 ? 1 : 2;
         wall.matrix.setIdentity()
-          .translate(
-            x - halfW + blockSize / 2,
-            floorTopY + blockSize / 2,
-            z - halfD + blockSize / 2
-          )
-          .scale(blockSize, blockSize, blockSize);
+            .translate( x - halfW + .5,
+                        floorTopY + .5,
+                        z - halfD + .5 )
+            .scale(1,1,1);
         wall.render();
       }
     }
@@ -208,12 +225,7 @@ function renderAllShapes() {
 
   g_camera.resize();
   gl.uniformMatrix4fv(u_ProjectionMatrix, false, g_camera.projectionMatrix.elements);
-  const orbit = new Matrix4()
-    .translate(PIVOT.x, PIVOT.y, PIVOT.z)
-    .rotate(g_mouseYAngle, 0,1,0)
-    .translate(-PIVOT.x, -PIVOT.y, -PIVOT.z);
-  const fullView = new Matrix4(g_camera.viewMatrix).multiply(orbit);
-  gl.uniformMatrix4fv(u_ViewMatrix, false, fullView.elements);
+  gl.uniformMatrix4fv(u_ViewMatrix, false, g_camera.viewMatrix.elements);
   gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, new Matrix4().elements);
 
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -243,24 +255,35 @@ function renderAllShapes() {
 function main() {
   setupWebGL();
   connectVariablesToGLSL();
-  addActionsForHtmlUI();
   initTextures();
   g_camera = new Camera(canvas);
-  canvas.onmousedown = ev => { if(ev.button===0){ g_mouseDragging=true; g_lastMouseX=ev.clientX; g_lastMouseY=ev.clientY; g_startYAngle=g_mouseYAngle; g_startXAngle=g_mouseXAngle; }};
-  canvas.onmousemove = ev => { if(g_mouseDragging) updateRotation(ev); };
-  canvas.onmouseup   = ev => { if(ev.button===0) g_mouseDragging=false; };
+  canvas.onmousedown = ev => {
+    if (ev.button === 0) {
+      g_mouseDragging = true;
+      g_lastMouseX   = ev.clientX;
+      g_lastMouseY   = ev.clientY;
+    }
+  };
+  canvas.onmousemove = ev => {
+    if (!g_mouseDragging) return;
+    const dx = ev.clientX - g_lastMouseX;
+    const dy = ev.clientY - g_lastMouseY;
+    g_lastMouseX = ev.clientX;
+    g_lastMouseY = ev.clientY;
+    const yaw   = -dx / canvas.width  * 180;
+    const pitch = 0;
+    g_camera.pan(yaw, pitch);
+  };
+  canvas.onmouseup = ev => {
+    if (ev.button === 0) g_mouseDragging = false;
+  };
   document.onkeydown = keydown;
   requestAnimationFrame(function tick(){ renderAllShapes(); requestAnimationFrame(tick); });
 }
 
-function updateRotation(ev) {
-  g_mouseYAngle = g_startYAngle + (ev.clientX - g_lastMouseX)/canvas.width * 180;
-  g_mouseXAngle = g_startXAngle - (ev.clientY - g_lastMouseY)/canvas.height * 180;
-}
-
 function keydown(ev) {
   const speed = .2;
-  const turn  = 5;  // degrees per keypress
+  const turn  = 5;
 
   switch (ev.key) {
     case 'w':
@@ -275,13 +298,54 @@ function keydown(ev) {
     case 'd':
       g_camera.moveRight(speed);
       break;
-    case 'e':  // spin right
-      g_mouseYAngle += turn;
+      case 'e':
+      g_camera.pan(-turn, 0 );
       break;
-    case 'q':  // spin left
-      g_mouseYAngle -= turn;
+    case 'q':
+      g_camera.pan(turn, 0 );
       break;
+    case 'p': {
+      const { row, col } = getFacingCell(1);
+      if (
+        row >= 0 && row < MAP_SIZE &&
+        col >= 0 && col < MAP_SIZE &&
+        g_map[row][col] === 0
+      ) {
+        g_map[row][col] = 2;
+      }
+      break;
+    }
+    case 'r': {
+      const { row, col } = getFacingCell(1);
+      if (
+        row >= 0 && row < MAP_SIZE &&
+        col >= 0 && col < MAP_SIZE &&
+        (g_map[row][col] === 1 || g_map[row][col] === 2)
+      ) {
+        g_map[row][col] = 0;
+      }
+      break;
+    }
   }
+}
+
+function getCameraPos() {
+  const e = g_camera.transform.elements;
+  return { x: e[12], y: e[13], z: e[14] };
+}
+
+function getFacingCell(maxReach = 1) {
+  const pos = getCameraPos();
+  const yawRad = g_mouseYAngle * Math.PI/180;
+  const dirX   = -Math.sin(yawRad);
+  const dirZ   = -Math.cos(yawRad);
+
+  const tx = pos.x + dirX * maxReach;
+  const tz = pos.z + dirZ * maxReach;
+
+  const col = Math.floor(tx + MAP_SIZE/2);
+  const row = Math.floor(tz + MAP_SIZE/2);
+  return { row, col };
 }
 
 
