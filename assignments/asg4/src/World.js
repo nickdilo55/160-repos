@@ -20,40 +20,36 @@ var VSHADER_SOURCE = `
   var FSHADER_SOURCE = `
     precision mediump float;
 
-    varying vec2 v_UV;
-    varying vec3 v_Normal;
-    varying vec4 v_vertPos;
+    varying vec2  v_UV;
+    varying vec3  v_Normal;
+    varying vec4  v_vertPos;
 
-    uniform vec4 u_FragColor;
-    uniform sampler2D u_Sampler0;
-    uniform sampler2D u_Sampler1;
-    uniform sampler2D u_Sampler2;
-    uniform int    u_whichTexture;
+    uniform vec4    u_FragColor;
+    uniform sampler2D u_Sampler0, u_Sampler1, u_Sampler2;
+    uniform int     u_whichTexture;
 
-    uniform vec3 u_lightPos;
-    uniform vec3 u_cameraPos;
-
-    uniform bool u_lightOn;
+    uniform vec3   u_lightPos;
+    uniform vec3   u_cameraPos;
+    uniform bool   u_lightOn;
 
     void main() {
-      // --- 1) pick the base color (flat, UV, or texture) ---
+      // 1) pick the base color
       vec4 baseColor;
-      if (u_whichTexture == -2) {
-        baseColor = u_FragColor;
-      } else if (u_whichTexture == -1) {
-        baseColor = vec4(v_UV, 1.0, 1.0);
-      } else if (u_whichTexture == 0) {
-        baseColor = texture2D(u_Sampler0, v_UV);
-      } else if (u_whichTexture == 1) {
-        baseColor = texture2D(u_Sampler1, v_UV);
-      } else if (u_whichTexture == 2) {
-        baseColor = texture2D(u_Sampler2, v_UV);
-      } else if (u_whichTexture == -3) {
-        baseColor = vec4((v_Normal + 1.0) / 2.0, 1.0);
-      } else {
-        baseColor = vec4(1.0, 0.2, 0.2, 1.0);
+      if      (u_whichTexture == -2) baseColor = u_FragColor;
+      else if (u_whichTexture == -1) baseColor = vec4(v_UV, 1.0, 1.0);
+      else if (u_whichTexture ==  0) baseColor = texture2D(u_Sampler0, v_UV);
+      else if (u_whichTexture ==  1) baseColor = texture2D(u_Sampler1, v_UV);
+      else if (u_whichTexture ==  2) baseColor = texture2D(u_Sampler2, v_UV);
+      else if (u_whichTexture == -3) baseColor = vec4((v_Normal + 1.0)/2.0, 1.0);
+      else                            baseColor = vec4(1.0, 0.2, 0.2, 1.0);
+
+      // 2) if the light is off, just show the base color
+      if (!u_lightOn) {
+        gl_FragColor = baseColor;
+        return;
       }
 
+      // 3) otherwise compute Phong + attenuation
       vec3 pos    = vec3(v_vertPos);
       vec3 Lvec   = u_lightPos - pos;
       float r     = length(Lvec);
@@ -61,23 +57,21 @@ var VSHADER_SOURCE = `
       vec3 N      = normalize(v_Normal);
       vec3 R      = reflect(-L, N);
       vec3 E      = normalize(u_cameraPos - pos);
+
       float nDotL = max(dot(N, L), 0.0);
       float spec  = pow(max(dot(E, R), 0.0), 10.0);
-      vec3 diffuse = baseColor.rgb * nDotL;
-      vec3 ambient = baseColor.rgb * 0.3;
-      float att = 1.0 / (0.2 + 0.2 * r + 0.5 * r * r);
+      vec3  diffuse = baseColor.rgb * nDotL;
+      vec3  ambient = baseColor.rgb * 0.3;
+
+      // simple attenuation
+      float att = 1.0 / (0.2 + 0.2*r + 0.5*r*r);
       diffuse *= att;
       spec    *= att;
       ambient *= att;
-      if (u_lightOn) {
-        if (u_whichTexture == 0) {
-          gl_FragColor = vec4(spec + diffuse + ambient, 1.0);
-        }
-        else {
-          gl_FragColor = vec4(diffuse + ambient, 1.0);
-        }
-      }
-      gl_FragColor = vec4(ambient + diffuse + spec, baseColor.a);
+
+      // 4) final lit color
+      vec3 lit = ambient + diffuse + spec;
+      gl_FragColor = vec4(lit, baseColor.a);
     }`;
 
 
@@ -276,6 +270,9 @@ function addActionsForHTMLUI() {
   document.getElementById('normalOn').onclick = function() {g_NormalOn = true;};
   document.getElementById('normalOff').onclick = function() {g_NormalOn = false;};
 
+  document.getElementById('lightOn') .onclick = () => { g_lightOn  = true;  renderAllShapes(); };
+  document.getElementById('lightOff').onclick = () => { g_lightOn  = false; renderAllShapes(); };
+
   document.getElementById('lightSlideX').addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[0] = this.value/100; renderAllShapes();}});
   document.getElementById('lightSlideY').addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[1] = this.value/100; renderAllShapes();}});
   document.getElementById('lightSlideZ').addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[2] = this.value/100; renderAllShapes();}});
@@ -309,7 +306,16 @@ function renderAllShapes() {
     camPos.z
   );
 
+  drawMap();
+
   gl.uniform1i(u_lightOn, g_lightOn);
+
+  const floor = new Cube();
+  floor.textureNum = -2; floor.color = [1,1,1,1];
+  floor.matrix.setIdentity()
+    .translate(-MAP_SIZE/2, -1.2, -MAP_SIZE/2)
+    .scale(MAP_SIZE, 0.01, MAP_SIZE);
+  floor.render();
 
   var light = new Cube();
   light.color = [2,2,0,1];
