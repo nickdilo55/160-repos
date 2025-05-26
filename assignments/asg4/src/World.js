@@ -233,46 +233,32 @@ function addActionsForHTMLUI() {
 }
 
 function renderAllShapes() {
-
-  const rows = MAP_SIZE, cols = MAP_SIZE;
-  const startTime = performance.now();
-
+  // resize & camera
   g_camera.resize();
-  gl.uniformMatrix4fv(u_ProjectionMatrix, false, g_camera.projectionMatrix.elements);
-  gl.uniformMatrix4fv(u_ViewMatrix, false, g_camera.viewMatrix.elements);
-  gl.uniformMatrix4fv(u_GlobalRotateMatrix, false, new Matrix4().elements);
+  gl.uniformMatrix4fv(u_ProjectionMatrix,false,g_camera.projectionMatrix.elements);
+  gl.uniformMatrix4fv(u_ViewMatrix,false,     g_camera.viewMatrix.elements);
+  gl.uniformMatrix4fv(u_GlobalRotateMatrix,false,new Matrix4().elements);
 
+  // clear
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-  const floor = new Cube();
-  floor.textureNum = -2; floor.color = [1,1,1,1];
-  floor.matrix.setIdentity()
-    .translate(-cols/2, -0.75, -rows/2)
-    .scale(cols, 0.01, rows);
-  floor.render();
-
-  var sky = new Cube();
-  sky.color = [1,0,0,1];
-  sky.textureNum = 0;
-  if (g_NormalOn) sky.textureNum = -3;
-  sky.matrix.scale(-50,-50,-50);
-  sky.matrix.translate(-.5,-.5,-.5);
+  // Skybox (Cube)
+  const sky = new Cube();
+  sky.textureNum = g_NormalOn ? -3 : 0;
+  sky.color      = [1,1,1,1];
+  sky.matrix.setIdentity()
+             .scale(-50,-50,-50)
+             .translate(-0.5,-0.5,-0.5);
   sky.render();
 
-  var cube = new Cube();
-  cube.color = [0.8, 0, 0, 1];
-  cube.textureNum = -2; // No texture
-  cube.matrix.translate(-2.0, -0.2, -4);
-  cube.matrix.rotate(0, 1, 0, 0);
-  cube.matrix.scale(0.5, 0.5, 0.5);
-  cube.render();
-
-  drawMap();
-
-  for (const s of g_shapesList) s.render();
-
-  const ms = performance.now() - startTime;
-  sendTextToHTML(`numdot:${g_shapesList.length} ms:${Math.floor(ms)} fps:${Math.floor(1000/ms)}`, 'numdot');
+  // Sphere in scene
+  const ball = new Sphere();
+  ball.textureNum = g_NormalOn ? -3 : 2;  // 2 = stone.png slot
+  ball.color      = [1,1,1,1];
+  ball.matrix.setIdentity()
+             .translate(0,1,0)
+             .scale(1,1,1);
+  ball.render();
 }
 
 function main() {
