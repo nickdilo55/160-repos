@@ -5,6 +5,7 @@ var VSHADER_SOURCE = `
   varying vec2 v_UV;
   attribute vec3 a_Normal;
   varying vec3 v_Normal;
+  varying vec4 v_vertPos;
   uniform mat4 u_ModelMatrix;
   uniform mat4 u_GlobalRotateMatrix;
   uniform mat4 u_ViewMatrix;
@@ -13,6 +14,7 @@ var VSHADER_SOURCE = `
     gl_Position = u_ProjectionMatrix * u_ViewMatrix * u_GlobalRotateMatrix * u_ModelMatrix * a_Position;
     v_UV = a_UV;
     v_Normal = a_Normal;
+    v_vertPos = u_ModelMatrix * a_Position;
   }`;
 
 var FSHADER_SOURCE = `
@@ -24,6 +26,8 @@ var FSHADER_SOURCE = `
   uniform sampler2D u_Sampler1;
   uniform sampler2D u_Sampler2;
   uniform int u_whichTexture;
+  uniform vec3 u_lightPos;
+  varying vec4 v_vertPos;
   void main() {
     if (u_whichTexture == -2) {
       gl_FragColor = u_FragColor;
@@ -41,12 +45,20 @@ var FSHADER_SOURCE = `
       gl_FragColor = vec4(1.0, 0.2, 0.2, 1.0);
     }
 
+    vec3 lightVector = vec3(v_vertPos) - u_lightPos;
+    float r = length(lightVector);
+    if (r < 1.0) {
+      gl_FragColor = vec4(1,0,0,1);
+    } else if (r < 2.0) {
+      gl_FragColor = vec4(0,1,0,1);
+    }
+
   }`;
 
 let canvas, gl;
 let a_Position, a_UV;
 let u_FragColor, u_Size;
-let a_Normal;
+let a_Normal, u_lightPos;
 let u_ModelMatrix, u_ViewMatrix, u_ProjectionMatrix, u_GlobalRotateMatrix;
 let u_Sampler0, u_Sampler1, u_whichTexture;
 let hedgeTexture;
@@ -55,6 +67,8 @@ let g_lastMouseX = 0, g_lastMouseY = 0;
 let g_startXAngle = 0, g_startYAngle = 0;
 let g_mouseDragging = false;
 let g_NormalOn = false;
+let g_lightPos=[0,1,-2];
+let g_startTime = null;
 
 let g_shapesList = [];
 
@@ -139,6 +153,7 @@ function connectVariablesToGLSL() {
   u_Sampler1           = gl.getUniformLocation(gl.program, 'u_Sampler1');
   u_Sampler2           = gl.getUniformLocation(gl.program, 'u_Sampler2');
   u_whichTexture       = gl.getUniformLocation(gl.program, 'u_whichTexture');
+  u_lightPos           = gl.getUniformLocation(gl.program, 'u_lightPos');
 
   const identityM = new Matrix4();
   gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
@@ -230,6 +245,10 @@ function drawMap() {
 function addActionsForHTMLUI() {
   document.getElementById('normalOn').onclick = function() {g_NormalOn = true;};
   document.getElementById('normalOff').onclick = function() {g_NormalOn = false;};
+
+  document.getElementById('lightSlideX').addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[0] = this.value/100; renderAllShapes();}});
+  document.getElementById('lightSlideY').addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[1] = this.value/100; renderAllShapes();}});
+  document.getElementById('lightSlideZ').addEventListener('mousemove', function(ev) {if(ev.buttons == 1) {g_lightPos[2] = this.value/100; renderAllShapes();}});
 }
 
 function renderAllShapes() {
@@ -242,6 +261,7 @@ function renderAllShapes() {
   // clear
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
+
   // Skybox (Cube)
   const sky = new Cube();
   sky.textureNum = g_NormalOn ? -3 : 0;
@@ -251,6 +271,15 @@ function renderAllShapes() {
              .translate(-0.5,-0.5,-0.5);
   sky.render();
 
+  gl.uniform3f(u_lightPos, g_lightPos[0], g_lightPos[1], g_lightPos[2]);
+
+  var light = new Cube();
+  light.color = [2,2,0,1];
+  light.matrix.translate(g_lightPos[0], g_lightPos[1], g_lightPos[2]);
+  light.matrix.scale(.1,.1,.1);
+  light.matrix.translate(-.5,-.5,-.5);
+  light.render();
+
   // Sphere in scene
   const ball = new Sphere();
   ball.textureNum = g_NormalOn ? -3 : 2;  // 2 = stone.png slot
@@ -259,6 +288,18 @@ function renderAllShapes() {
              .translate(0,1,0)
              .scale(1,1,1);
   ball.render();
+}
+
+function tick(now) {
+  if (g_startTime === null) g_startTime = now;
+  // elapsed seconds since start:
+  const t = (now - g_startTime) * 0.001;
+  // animate light X with cosine:
+  g_lightPos[0] = Math.cos(t);
+  // redraw scene with new light position:
+  renderAllShapes();
+  // queue up next frame:
+  requestAnimationFrame(tick);
 }
 
 function main() {
@@ -288,7 +329,8 @@ function main() {
     if (ev.button === 0) g_mouseDragging = false;
   };
   document.onkeydown = keydown;
-  requestAnimationFrame(function tick(){ renderAllShapes(); requestAnimationFrame(tick); });
+  g_startTime = performance.now();
+  requestAnimationFrame(tick);
 }
 
 function keydown(ev) {
