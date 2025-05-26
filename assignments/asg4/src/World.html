@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Change a point color</title>
+</head>
+<body onload="main()">
+
+  <canvas id="webgl" width="400" height="400">
+    Please use a browser that supports “canvas”
+  </canvas>
+  <p></p>
+
+  <p id="numdot">XXX</p>
+
+  <div id="controls">
+      <h3>Controls</h3>
+      <ul>
+        <li><strong>W/A/S/D</strong>: Move player</li>
+        <li><strong>Mouse Move</strong>: Look around</li>
+        <li><strong>Q</strong>: Rotate Camera Left</li>
+        <li><strong>E</strong>: Rotate Camera Right</li>
+        <li><strong>P</strong>: Place block</li>
+        <li><strong>R</strong>: Remove block</li>
+        <li> Find your way out the maze! Don't get lost or you'll go insane.</li>
+      </ul>
+      <button id="normalOn">Show Normals</button>
+      <button id="normalOff">Hide Normals</button>
+    </div>
+  <script src="../lib/webgl-utils.js"></script>
+  <script src="../lib/webgl-debug.js"></script>
+  <script src="../lib/cuon-utils.js"></script>
+  <script src="../lib/cuon-matrix.js"></script>
+
+  <script src="Triangle.js"></script>
+  <script src="Circle.js"></script>
+  <script src="Point.js"></script>
+  <script src="Cube.js"></script>
+  <script src="Camera.js"></script>
+  <script src="World.js"></script>
+
+</body>
+</html>
