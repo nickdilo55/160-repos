@@ -17,43 +17,69 @@ var VSHADER_SOURCE = `
     v_vertPos = u_ModelMatrix * a_Position;
   }`;
 
-var FSHADER_SOURCE = `
-  precision mediump float;
-  varying vec2 v_UV;
-  varying vec3 v_Normal;
-  uniform vec4 u_FragColor;
-  uniform sampler2D u_Sampler0;
-  uniform sampler2D u_Sampler1;
-  uniform sampler2D u_Sampler2;
-  uniform int u_whichTexture;
-  uniform vec3 u_lightPos;
-  varying vec4 v_vertPos;
-  void main() {
-    if (u_whichTexture == -2) {
-      gl_FragColor = u_FragColor;
-    } else if (u_whichTexture == -1) {
-      gl_FragColor = vec4(v_UV, 1.0, 1.0);
-    } else if (u_whichTexture == 0) {
-      gl_FragColor = texture2D(u_Sampler0, v_UV);
-    } else if (u_whichTexture == 1) {
-      gl_FragColor = texture2D(u_Sampler1, v_UV);
-    } else if (u_whichTexture == 2) {
-      gl_FragColor = texture2D(u_Sampler2, v_UV);
-    } else if (u_whichTexture == -3) {
-      gl_FragColor = vec4((v_Normal + 1.0) / 2.0, 1.0);
-    } else {
-      gl_FragColor = vec4(1.0, 0.2, 0.2, 1.0);
-    }
+  var FSHADER_SOURCE = `
+    precision mediump float;
 
-    vec3 lightVector = vec3(v_vertPos) - u_lightPos;
-    float r = length(lightVector);
-    if (r < 1.0) {
-      gl_FragColor = vec4(1,0,0,1);
-    } else if (r < 2.0) {
-      gl_FragColor = vec4(0,1,0,1);
-    }
+    varying vec2 v_UV;
+    varying vec3 v_Normal;
+    varying vec4 v_vertPos;
 
-  }`;
+    uniform vec4 u_FragColor;
+    uniform sampler2D u_Sampler0;
+    uniform sampler2D u_Sampler1;
+    uniform sampler2D u_Sampler2;
+    uniform int    u_whichTexture;
+
+    uniform vec3 u_lightPos;
+    uniform vec3 u_cameraPos;
+
+    uniform bool u_lightOn;
+
+    void main() {
+      // --- 1) pick the base color (flat, UV, or texture) ---
+      vec4 baseColor;
+      if (u_whichTexture == -2) {
+        baseColor = u_FragColor;
+      } else if (u_whichTexture == -1) {
+        baseColor = vec4(v_UV, 1.0, 1.0);
+      } else if (u_whichTexture == 0) {
+        baseColor = texture2D(u_Sampler0, v_UV);
+      } else if (u_whichTexture == 1) {
+        baseColor = texture2D(u_Sampler1, v_UV);
+      } else if (u_whichTexture == 2) {
+        baseColor = texture2D(u_Sampler2, v_UV);
+      } else if (u_whichTexture == -3) {
+        baseColor = vec4((v_Normal + 1.0) / 2.0, 1.0);
+      } else {
+        baseColor = vec4(1.0, 0.2, 0.2, 1.0);
+      }
+
+      vec3 pos    = vec3(v_vertPos);
+      vec3 Lvec   = u_lightPos - pos;
+      float r     = length(Lvec);
+      vec3 L      = normalize(Lvec);
+      vec3 N      = normalize(v_Normal);
+      vec3 R      = reflect(-L, N);
+      vec3 E      = normalize(u_cameraPos - pos);
+      float nDotL = max(dot(N, L), 0.0);
+      float spec  = pow(max(dot(E, R), 0.0), 10.0);
+      vec3 diffuse = baseColor.rgb * nDotL;
+      vec3 ambient = baseColor.rgb * 0.3;
+      float att = 1.0 / (0.2 + 0.2 * r + 0.5 * r * r);
+      diffuse *= att;
+      spec    *= att;
+      ambient *= att;
+      if (u_lightOn) {
+        if (u_whichTexture == 0) {
+          gl_FragColor = vec4(spec + diffuse + ambient, 1.0);
+        }
+        else {
+          gl_FragColor = vec4(diffuse + ambient, 1.0);
+        }
+      }
+      gl_FragColor = vec4(ambient + diffuse + spec, baseColor.a);
+    }`;
+
 
 let canvas, gl;
 let a_Position, a_UV;
@@ -69,6 +95,8 @@ let g_mouseDragging = false;
 let g_NormalOn = false;
 let g_lightPos=[0,1,-2];
 let g_startTime = null;
+let u_cameraPos;
+let g_lightOn = true;
 
 let g_shapesList = [];
 
@@ -154,6 +182,8 @@ function connectVariablesToGLSL() {
   u_Sampler2           = gl.getUniformLocation(gl.program, 'u_Sampler2');
   u_whichTexture       = gl.getUniformLocation(gl.program, 'u_whichTexture');
   u_lightPos           = gl.getUniformLocation(gl.program, 'u_lightPos');
+  u_cameraPos          = gl.getUniformLocation(gl.program, 'u_cameraPos');
+  u_lightOn            = gl.getUniformLocation(gl.program, 'u_lightOn');
 
   const identityM = new Matrix4();
   gl.uniformMatrix4fv(u_ModelMatrix, false, identityM.elements);
@@ -272,11 +302,19 @@ function renderAllShapes() {
   sky.render();
 
   gl.uniform3f(u_lightPos, g_lightPos[0], g_lightPos[1], g_lightPos[2]);
+  const camPos = getCameraPos();
+  gl.uniform3f(u_cameraPos,
+    camPos.x,
+    camPos.y,
+    camPos.z
+  );
+
+  gl.uniform1i(u_lightOn, g_lightOn);
 
   var light = new Cube();
   light.color = [2,2,0,1];
   light.matrix.translate(g_lightPos[0], g_lightPos[1], g_lightPos[2]);
-  light.matrix.scale(.1,.1,.1);
+  light.matrix.scale(-.1,-.1,-.1);
   light.matrix.translate(-.5,-.5,-.5);
   light.render();
 
@@ -292,13 +330,14 @@ function renderAllShapes() {
 
 function tick(now) {
   if (g_startTime === null) g_startTime = now;
-  // elapsed seconds since start:
   const t = (now - g_startTime) * 0.001;
-  // animate light X with cosine:
-  g_lightPos[0] = Math.cos(t);
-  // redraw scene with new light position:
+
+  // only auto-move X when the user isn’t dragging the X-slider:
+  if (!document.getElementById('lightSlideX').matches(':active')) {
+    g_lightPos[0] = Math.cos(t);
+  }
+
   renderAllShapes();
-  // queue up next frame:
   requestAnimationFrame(tick);
 }
 
