@@ -1,0 +1,73 @@
+# Blender 4.4.3 MTL File: 'chesterfield-sofa.blend'
+# www.blender.org
+
+newmtl Material
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd TexturesCom_Wood_MahoganyVeneer_512_albedo.jpg
+map_Ns TexturesCom_Wood_MahoganyVeneer_512_roughness.jpg
+map_Bump -bm 1.000000 TexturesCom_Wood_MahoganyVeneer_512_normal.jpg
+
+newmtl Material.001
+Ns 1.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd FabricLeatherBuffaloRustic001_COL_VAR3_2K.jpg
+map_Bump -bm 1.000000 FabricLeatherBuffaloRustic001_DISP_2K.jpg
+
+newmtl Material.002
+Ns 1.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd FabricLeatherBuffaloRustic001_COL_VAR3_2K.jpg
+map_Bump -bm 1.000000 FabricLeatherBuffaloRustic001_DISP_2K.jpg
+
+newmtl Material.003
+Ns 1.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd FabricLeatherBuffaloRustic001_COL_VAR3_2K.jpg
+map_Bump -bm 1.000000 FabricLeatherBuffaloRustic001_DISP_2K.jpg
+
+newmtl Material.005
+Ns 1.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+map_Kd FabricLeatherBuffaloRustic001_COL_VAR3_2K.jpg
+map_Bump -bm 1.000000 FabricLeatherBuffaloRustic001_DISP_2K.jpg
+
+newmtl Material.006
+Ns 10.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.719728 0.217787
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+map_Kd FabricLeatherBuffaloRustic001_COL_VAR3_2K.jpg
+map_Bump -bm 1.000000 FabricLeatherBuffaloRustic001_DISP_2K.jpg
