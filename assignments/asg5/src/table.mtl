@@ -1,0 +1,22 @@
+# Blender 4.4.3 MTL File: 'stewarts-antique-french-table.blend'
+# www.blender.org
+
+newmtl Table
+Ns 1000.000000
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000    # Make Kd = 1 so texture’s color shows unmodified
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+# 1) Albedo / Diffuse map
+map_Kd Antique_French_Style_Table_ALB.jpg
+
+# 2) Normal map
+map_Bump -bm 1.000000 Antique_French_Style_Table_NRM.jpg
+
+# 3) Roughness + AO combined map (drives both roughness & AO in our code)
+map_Pr Antique_French_Style_Table_RGH_MTL_AO.jpg
+
