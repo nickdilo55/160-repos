@@ -2,10 +2,22 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>World – Hello Cube Fundamentals</title>
+  <title>ASG5</title>
   <style>
     body { margin: 0; overflow: hidden; }
     canvas { display: block; }
+    #instructions {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-family: sans-serif;
+      font-size: 14px;
+      border-radius: 4px;
+      z-index: 10;
+    }
   </style>
 
   <script type="importmap">
@@ -21,6 +33,11 @@
 </head>
 
 <body>
+  <div id="instructions">
+    E to Pick Up<br/>
+    F to Drop<br/>
+    Click the lamp to turn it on
+  </div>
   <canvas id="c"></canvas>
 </body>
 </html>
