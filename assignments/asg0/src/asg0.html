@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>CSE 160 ASG0</title>
+  </head>
+  <body onload="main()">
+    <canvas id="cnv1" width="400" height="400">
+      Please use a browser that supports "canvas"
+    </canvas>
+
+    <br><br>
+
+    <label for="xcoord1">V1: x </label>
+    <input type="text" id="xcoord1" name="xcoord1" required size="5" />
+    <label for="ycoord1">y </label>
+    <input type="text" id="ycoord1" name="ycoord1" required size="5" />
+
+    <br>
+
+    <label for="xcoord2">V2: x </label>
+    <input type="text" id="xcoord2" name="xcoord2" required size="5" />
+    <label for="ycoord2">y </label>
+    <input type="text" id="ycoord2" name="ycoord2" required size="5" />
+
+    <br><br>
+
+    <label for="operationSelect">Operation:</label>
+    <select id="operationSelect">
+      <option value="add">Add</option>
+      <option value="sub">Subtract</option>
+      <option value="mul">Multiply by Scalar</option>
+      <option value="div">Divide by Scalar</option>
+      <option value="mag">Magnitude</option>
+      <option value="norm">Normalize</option>
+      <option value="angle">Angle between</option>
+      <option value="area">Area</option>
+    </select>
+
+    <br>
+
+    <label for="scalarValue">Scalar:</label>
+    <input type="text" id="scalarValue" value="1" />
+    <br>
+    <input type="button" value="Draw" onclick="handleDrawOperationEvent()" />
+
+    <br><br>
+
+    <script src="../lib/cuon-matrix-cse160.js"></script>
+    <script src="asg0.js"></script>
+  </body>
+</html>
